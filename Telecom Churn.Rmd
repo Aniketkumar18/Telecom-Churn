@@ -1,0 +1,453 @@
+---
+title: "Telecom Churn"
+output: github_document
+---
+
+## Business Understanding:
+
+### Based on the past and current customer information,
+### the company has maintained a database containing personal/demographic information,
+### the services availed by a customer and the expense information related to each customer.
+
+## AIM:
+
+### The aim is to automate the process of predicting 
+### if a customer would telecom or not and to find the factors affecting the telecom. 
+### Whether a customer will telecom or not will depend on data from the following three buckets:
+
+### 1. Demographic Information
+### 2. Services Availed by the customer
+### 3. Overall Expenses
+
+################################################################
+
+### Data Understanding
+
+We have three types of data:-
+1. Demographics 
+2. Services Availed
+3. Expenses
+
+We start with importing the libraries
+```{r}
+#install.packages("Mass")
+#install.packages("car")
+#install.packages("e1071")
+#install.packages("caret", dependencies = c("Depends", "Suggests"))
+#install.packages("cowplot")
+#install.packages("GGally")
+
+library(MASS)
+library(car)
+library(e1071)
+library(caret)
+library(cowplot)
+library(GGally)
+library(caTools)
+require(dplyr)
+library(dplyr)
+```
+
+
+Importing the data and exploring the data set
+
+```{r}
+churn_data <- read.csv("churn_data.csv", stringsAsFactors = FALSE)
+customer_data <- read.csv("customer_data.csv", stringsAsFactors = FALSE)
+internet_data <- read.csv("internet_data.csv", stringsAsFactors = FALSE)
+
+str(churn_data)    # 7043 observations of 9 variables
+str(customer_data) # 7043 observations of 5 variables
+str(internet_data) # 7043 observations of 9 variables
+```
+
+Now let us take a look at all the three dataset
+```{r}
+head(churn_data)
+head(customer_data)
+head(internet_data)
+```
+
+Now let us see that our data is ready to be merged together
+
+We first check whether the customerID is same in all the dataset
+```{r}
+setdiff(churn_data$customerID,customer_data$customerID)
+setdiff(churn_data$customerID,internet_data$customerID)
+```
+
+This shows that we have similar customer ID in all the three dataset
+
+Now we proceed with merging the dataset
+```{r}
+telecom <- merge(churn_data, customer_data, by='customerID', all = FALSE)
+telecom <- merge(telecom, internet_data, by='customerID', all = FALSE)
+```
+
+Now let us see our master data with all the three files meged together
+```{r}
+head(telecom)
+```
+
+################################################################
+
+### Data Preparation & Exploratory Data Analysis
+
+Understanding the structure if the collated file
+```{r}
+str(telecom)
+```
+
+As we can see tenure, MonthlyCharges, TotalCharges are continuous variables
+However, we need to convert the SeniorCitizen column into categorical type
+
+```{r , echo=FALSE}
+# Barcharts for categorical features with stacked telecom information
+bar_theme1<- theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), 
+                   legend.position="none")
+
+
+
+plot_grid(ggplot(telecom, aes(x=PhoneService,fill=Churn))+ geom_bar(), 
+          ggplot(telecom, aes(x=Contract,fill=Churn))+ geom_bar()+bar_theme1,
+          ggplot(telecom, aes(x=PaperlessBilling,fill=Churn))+ geom_bar()+bar_theme1,
+          ggplot(telecom, aes(x=PaymentMethod,fill=Churn))+ geom_bar()+bar_theme1,
+          ggplot(telecom, aes(x=gender,fill=Churn))+ geom_bar()+bar_theme1,
+          ggplot(telecom, aes(x=factor(SeniorCitizen),fill=Churn))+ geom_bar()+bar_theme1,
+          align = "h")   
+
+plot_grid(ggplot(telecom, aes(x=Partner,fill=Churn))+ geom_bar()+bar_theme1,
+          ggplot(telecom, aes(x=Dependents,fill=Churn))+ geom_bar()+bar_theme1,
+          ggplot(telecom, aes(x=MultipleLines,fill=Churn))+ geom_bar()+bar_theme1,
+          ggplot(telecom, aes(x=InternetService,fill=Churn))+ geom_bar()+bar_theme1,
+          align = "h") 
+
+plot_grid(ggplot(telecom, aes(x=OnlineSecurity,fill=Churn))+ geom_bar()+bar_theme1,
+          ggplot(telecom, aes(x=OnlineBackup,fill=Churn))+ geom_bar()+bar_theme1,
+          ggplot(telecom, aes(x=DeviceProtection,fill=Churn))+ geom_bar()+bar_theme1,
+          ggplot(telecom, aes(x=TechSupport,fill=Churn))+ geom_bar()+bar_theme1,
+          ggplot(telecom, aes(x=StreamingTV,fill=Churn))+ geom_bar()+bar_theme1,
+          ggplot(telecom, aes(x=StreamingMovies,fill=Churn))+ geom_bar()+bar_theme1,
+          align = "h")
+```
+
+This reveals strong contrast for telecom with respect to Contract,InternetServices, (not availing) OnlineSecurity and Techsupport and PaymentMethod and moderate with respect to whether SeniorCitizen, having partner, OnlineBackup and DeviceProtection
+
+Visualizations for Continuous variables
+```{r , echo=FALSE}
+# Histogram and Boxplots for numeric variables 
+box_theme<- theme(axis.line=element_blank(),axis.title=element_blank(), 
+                  axis.ticks=element_blank(), axis.text=element_blank())
+
+box_theme_y<- theme(axis.line.y=element_blank(),axis.title.y=element_blank(), 
+                    axis.ticks.y=element_blank(), axis.text.y=element_blank(),
+                    legend.position="none")
+
+plot_grid(ggplot(telecom, aes(tenure))+ geom_histogram(binwidth = 10),
+          ggplot(telecom, aes(x="",y=tenure))+ geom_boxplot(width=0.1)+coord_flip()+box_theme, 
+          align = "v",ncol = 1)
+
+plot_grid(ggplot(telecom, aes(MonthlyCharges))+ geom_histogram(binwidth = 20),
+          ggplot(telecom, aes(x="",y=MonthlyCharges))+ geom_boxplot(width=0.1)+coord_flip()+box_theme, 
+          align = "v",ncol = 1)
+
+plot_grid(ggplot(telecom, aes(TotalCharges))+ geom_histogram(),
+          ggplot(telecom, aes(x="",y=TotalCharges))+ geom_boxplot(width=0.1)+coord_flip()+box_theme, 
+          align = "v",ncol = 1) 
+
+#No outliers in numeric variables
+
+# Boxplots of numeric variables relative to telecom status
+plot_grid(ggplot(telecom, aes(x=Churn,y=tenure, fill=Churn))+ geom_boxplot(width=0.2)+ 
+            coord_flip() +theme(legend.position="none"),
+          ggplot(telecom, aes(x=Churn,y=MonthlyCharges, fill=Churn))+ geom_boxplot(width=0.2)+
+            coord_flip() + box_theme_y,
+          ggplot(telecom, aes(x=Churn,y=TotalCharges, fill=Churn))+ geom_boxplot(width=0.2)+
+            coord_flip() + box_theme_y,
+          align = "v",nrow = 1)
+```
+
+Correlation between numeric variables
+```{r}
+ggpairs(telecom[, c("tenure", "MonthlyCharges", "TotalCharges")])
+
+```
+
+As expected, tenure and TotalCharges are highly correlated (corr 0.83)
+
+################################################################
+### Data Preparation
+
+```{r}
+telecom$SeniorCitizen <- ifelse(telecom$SeniorCitizen==1, "Yes", "No")
+```
+
+Treating Missing Values
+```{r}
+names(which(sapply(telecom, function(x) any(is.na(x)))))
+sum(is.na(telecom$TotalCharges))
+
+# Removing the missing values from the data
+telecom <- na.omit(telecom)
+```
+
+################################################################
+### Feature standardisation
+
+Normalizing the continuous variables
+```{r}
+telecom$tenure <- scale(telecom$tenure)
+telecom$MonthlyCharges <- scale(telecom$MonthlyCharges)
+telecom$TotalCharges <- scale(telecom$TotalCharges)
+```
+
+Converting target variable to numeric
+```{r}
+telecom$Churn <- ifelse(telecom$Churn=='Yes',1,0)
+```
+
+Calculating the churn rate
+```{r}
+churn <- sum(telecom$Churn)/nrow(telecom)
+churn
+```
+
+Creating a dataset of categorical features
+```{r}
+telecom_chur <- telecom[,-c(1,2,7,8,9)]
+```
+
+Converting categorical attributes to factor
+```{r}
+telecom_fact <- data.frame(sapply(telecom_chur, function(x) factor(x)))
+str(telecom_fact)
+```
+
+Converting factor to dummy variables
+```{r}
+dummies<- data.frame(sapply(telecom_fact, 
+                            function(x) data.frame(model.matrix(~x-1,data =telecom_fact))[,-1]))
+```
+
+For variables having only two levels, verified PhoneService, PaperlessBilling, Partner, Dependents "yes" is 1, gender "male" is 1 and SeniorCitizen "1" is 1 
+
+Final Dataset
+```{r}
+telecom_final <- cbind(telecom[,c(9,2,7,8)], dummies)
+head(telecom_final)
+```
+
+########################################################################
+### Splitting the data between train and test
+
+```{r}
+set.seed(100)
+
+indices <- sample.split(telecom_final$Churn, SplitRatio = 0.7)
+
+train <- telecom_final[indices,]
+
+test <- telecom_final[!(indices),]
+```
+
+########################################################################
+### Logistic Regression
+
+Creating the first model
+```{r}
+model_1 <- glm(Churn~ ., data = train, family = "binomial")
+summary(model_1)
+```
+
+Here we can see the coeficient values of all the features. We have AIC value of 4150.1, In our model we can see that we have lot of features with negligible values or NA, this means we can neglect these variables from our analysis as they are not significant.
+
+Feauture Selection using Step AIC Function
+```{r}
+model_2 <- stepAIC(model_1, direction = "both")
+summary(model_2)
+```
+
+Now eliminating features using VIF and p-value
+```{r}
+vif(model_2)
+```
+
+We will now eliminate TotalCharges as the p-value is high also the VIF is high, however Monthly Charges comparitively has low p-value
+
+Now building a new model after eliminating TotalCharges
+```{r}
+model_3 <- glm(formula = Churn ~ tenure + MonthlyCharges +  
+                 PhoneService + Contract.xOne.year + Contract.xTwo.year + 
+                 PaperlessBilling + PaymentMethod.xElectronic.check + 
+                 SeniorCitizen + MultipleLines.xYes + 
+                 InternetService.xFiber.optic + InternetService.xNo + 
+                 OnlineBackup.xYes + DeviceProtection.xYes + 
+                 StreamingTV.xYes + StreamingMovies.xYes, family = "binomial", data = train)
+
+summary(model_3)
+vif(model_3)
+```
+
+Now removing MonthlyCharges
+```{r}
+model_4 <- glm(formula = Churn ~ tenure +   
+                 PhoneService + Contract.xOne.year + Contract.xTwo.year + 
+                 PaperlessBilling + PaymentMethod.xElectronic.check + 
+                 SeniorCitizen + MultipleLines.xYes + 
+                 InternetService.xFiber.optic + InternetService.xNo + 
+                 OnlineBackup.xYes + DeviceProtection.xYes + 
+                 StreamingTV.xYes + StreamingMovies.xYes, family = "binomial", data = train)
+
+summary(model_4)
+vif(model_4)
+```
+
+Now as we see the VIF values are very small so we will now eliminate based on the p-values
+OnlineBackup is having the highest p-value, hence removing it from the model
+```{r}
+model_5 <- glm(formula = Churn ~ tenure +   
+                 PhoneService + Contract.xOne.year + Contract.xTwo.year + 
+                 PaperlessBilling + PaymentMethod.xElectronic.check + 
+                 SeniorCitizen + MultipleLines.xYes + 
+                 InternetService.xFiber.optic + InternetService.xNo + DeviceProtection.xYes + 
+                 StreamingTV.xYes + StreamingMovies.xYes, family = "binomial", data = train)
+
+summary(model_5)
+```
+
+Now removing device protection
+```{r}
+model_6 <- glm(formula = Churn ~ tenure +   
+                 PhoneService + Contract.xOne.year + Contract.xTwo.year + 
+                 PaperlessBilling + PaymentMethod.xElectronic.check + 
+                 SeniorCitizen + MultipleLines.xYes + 
+                 InternetService.xFiber.optic + InternetService.xNo + 
+                 StreamingTV.xYes + StreamingMovies.xYes, family = "binomial", data = train)
+
+summary(model_6)
+```
+
+Now remving Senior Citizen
+```{r}
+model_7 <- glm(formula = Churn ~ tenure +   
+                 PhoneService + Contract.xOne.year + Contract.xTwo.year + 
+                 PaperlessBilling + PaymentMethod.xElectronic.check + 
+                 MultipleLines.xYes + InternetService.xFiber.optic + InternetService.xNo + 
+                 StreamingTV.xYes + StreamingMovies.xYes, family = "binomial", data = train)
+
+summary(model_7)
+```
+
+Now removing StreamingTV
+```{r}
+model_8 <- glm(formula = Churn ~ tenure +   
+                 PhoneService + Contract.xOne.year + Contract.xTwo.year + 
+                 PaperlessBilling + PaymentMethod.xElectronic.check + 
+                 MultipleLines.xYes + InternetService.xFiber.optic + InternetService.xNo + 
+                 StreamingMovies.xYes, family = "binomial", data = train)
+
+summary(model_8)
+```
+
+Now all the p-values are significant so we cannot remove any feauture now.
+This is our final model with 10 significant variables.
+
+```{r}
+final_model <- model_8
+```
+
+
+########################################################
+### Evaluating Model - Test Data
+
+```{r}
+test_pred <- predict(final_model, type = "response", newdata = test[,-1])
+summary(test_pred)
+
+test$prob <- test_pred
+head(test)
+```
+
+We have predicted the probability of customer churning and added the value as a column in the test data
+
+Now let us cut the probability at 50% for customer to churn
+```{r}
+test_pred_churn <- factor(ifelse(test_pred >= 0.50, "Yes", "No"))
+test_acctual_churn <- factor(ifelse(test$Churn == 1, "Yes", "No"))
+
+table(test_acctual_churn, test_pred_churn)
+```
+
+
+Now let us cut the probability at 40% for customer to churn
+```{r}
+test_pred_churn <- factor(ifelse(test_pred >= 0.40, "Yes", "No"))
+test_conf <- confusionMatrix(test_pred_churn, test_acctual_churn, positive = "Yes")
+test_conf
+```
+
+Let's find out the optimal probalility cutoff 
+```{r, echo=FALSE}
+
+
+perform_fn <- function(cutoff) 
+{
+  predicted_churn <- factor(ifelse(test_pred >= cutoff, "Yes", "No"))
+  conf <- confusionMatrix(predicted_churn, test_acctual_churn, positive = "Yes")
+  acc <- conf$overall[1]
+  sens <- conf$byClass[1]
+  spec <- conf$byClass[2]
+  out <- t(as.matrix(c(sens, spec, acc))) 
+  colnames(out) <- c("sensitivity", "specificity", "accuracy")
+  return(out)
+}
+
+# Creating cutoff values from 0.003575 to 0.812100 for plotting and initiallizing a matrix of 100 X 3.
+
+# Summary of test probability
+
+summary(test_pred)
+
+s = seq(.01,.80,length=100)
+
+OUT = matrix(0,100,3)
+
+
+for(i in 1:100)
+{
+  OUT[i,] = perform_fn(s[i])
+} 
+
+
+plot(s, OUT[,1],xlab="Cutoff",ylab="Value",cex.lab=1.5,cex.axis=1.5,ylim=c(0,1),type="l",lwd=2,axes=FALSE,col=2)
+axis(1,seq(0,1,length=5),seq(0,1,length=5),cex.lab=1.5)
+axis(2,seq(0,1,length=5),seq(0,1,length=5),cex.lab=1.5)
+lines(s,OUT[,2],col="darkgreen",lwd=2)
+lines(s,OUT[,3],col=4,lwd=2)
+box()
+legend(0,.50,col=c(2,"darkgreen",4,"darkred"),lwd=c(2,2,2,2),c("Sensitivity","Specificity","Accuracy"))
+
+
+cutoff <- s[which(abs(OUT[,1]-OUT[,2])<0.01)]
+```
+
+Let us choose a cutoff value of 0.3132
+```{r}
+test_cutoff_churn <- factor(ifelse(test_pred >=0.3132, "Yes", "No"))
+
+conf_final <- confusionMatrix(test_cutoff_churn, test_acctual_churn, positive = "Yes")
+
+acc <- conf_final$overall[1]
+
+sens <- conf_final$byClass[1]
+
+spec <- conf_final$byClass[2]
+
+acc
+
+sens
+
+spec
+
+head(test)
+```
